@@ -9,9 +9,6 @@ import commands
 from apscheduler.scheduler import Scheduler
 import config as _c
 
-
-
-
 def number_of_connected_devices(macs):
     ret = 0;
     data = commands.getoutput("snmpwalk -v2c -c %s %s %s" % (_c.ROUTER_COMMUNITY, _c.ROUTER_IP, _c.ROUTER_OID))
