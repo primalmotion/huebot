@@ -40,7 +40,7 @@ if __name__ == "__main__":
 
     def schedule_next_sunset():
         if _c.SUNSET_AUTO:
-            date = sunset_date(_c.SUNSET_CITY).replace(tzinfo=None) - timedelta(minutes=20)
+            date = sunset_date(_c.SUNSET_CITY).replace(tzinfo=None) - timedelta(minutes=_c.SUNSET_OFFSET)
         else:
             date = datetime.now().replace(hour=_c.SUNSET_HOUR, minute=_c.SUNSET_MINUTES, second=0, tzinfo=None)
 

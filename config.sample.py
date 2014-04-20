@@ -38,3 +38,4 @@ SUNSET_AUTO                = True
 SUNSET_CITY                = "San Francisco"
 SUNSET_HOUR                = None
 SUNSET_MINUTES             = None
+SUNSET_OFFSET              = 20
