@@ -56,7 +56,9 @@ if __name__ == "__main__":
     def turn_lights_off():
         scheduler.unschedule_func(check_devices_presence)
         scheduler.add_cron_job(schedule_next_sunset, hour=0, minute=1)
-        _set_lights_state(bridge, False)
+        weekday = datetime.today().weekday()
+        if not weekday in [5, 6]:
+            _set_lights_state(bridge, False)
 
     def check_devices_presence():
 
