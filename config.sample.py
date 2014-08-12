@@ -23,6 +23,9 @@ ROUTER_OID                 = "1.3.6.1.4.1.63.501.3.2"
 ## for the first time
 HUE_BRIDGE_IP              = "10.0.1.15"
 
+## path of the config file for phue.
+HUE_BRIDGE_CONFIG	   = "/root/.python_hue"
+
 ## The Bulbs IDs you want to manage
 HUE_BULBS_IDS              = [1, 2, 3, 4, 5, 6]
 
