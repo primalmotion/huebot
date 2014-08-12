@@ -13,7 +13,7 @@ import logging
 from apscheduler.scheduler import Scheduler
 import config as _c
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, filename="/var/log/huebot.log")
 
 def number_of_connected_devices(macs):
     ret = 0;
