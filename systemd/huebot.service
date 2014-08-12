@@ -1,5 +1,6 @@
 [Unit]
 Description=Hue Bot Brain
+After=network.target
 
 [Service]
 ExecStart=/root/huebot/huebot.py
