@@ -14,6 +14,7 @@ from apscheduler.scheduler import Scheduler
 import config as _c
 
 logging.basicConfig(level=logging.INFO, filename="/var/log/huebot.log")
+logger = logging.getLogger('huebot')
 
 def number_of_connected_devices(macs):
     ret = 0;
@@ -58,6 +59,8 @@ def _color_for_traffic():
 
 if __name__ == "__main__":
 
+    logger.info("HUEBOT says hello!")
+
     scheduler              = Scheduler()
     bridge                 = phue.Bridge(ip=_c.HUE_BRIDGE_IP, config_file_path=_c.HUE_BRIDGE_CONFIG)
     last_number_of_devices = 0
@@ -80,7 +83,11 @@ if __name__ == "__main__":
 
 
     def turn_lights_off():
-        scheduler.unschedule_func(check_devices_presence)
+        try:
+            scheduler.unschedule_func(check_devices_presence)
+        except:
+            logger.info("unable to unschedule check_devices_presence. huebot has been started during the lights on time.")
+
         scheduler.add_cron_job(schedule_next_sunset, hour=0, minute=1)
         weekday = datetime.today().weekday()
         if not weekday in [5, 6]:
