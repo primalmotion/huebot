@@ -1,0 +1,8 @@
+[Unit]
+Description=Hue Bot Brain
+
+[Service]
+ExecStart=/root/huebot/huebot.py
+
+[Install]
+WantedBy=multi-user.target
