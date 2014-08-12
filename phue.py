@@ -18,6 +18,7 @@ import json
 import os
 import platform
 import sys
+import socket
 if sys.version_info[0] > 2:
     PY3K = True
 else:
@@ -30,14 +31,14 @@ else:
 
 import logging
 logger = logging.getLogger('phue')
-logging.basicConfig(level=logging.INFO)
+
 
 if platform.system() == 'Windows':
     USER_HOME = 'USERPROFILE'
 else:
     USER_HOME = 'HOME'
 
-__version__ = '0.7'
+__version__ = '0.8'
 
 
 class PhueException(Exception):
@@ -48,6 +49,10 @@ class PhueException(Exception):
 
 
 class PhueRegistrationException(PhueException):
+    pass
+
+
+class PhueRequestTimeout(PhueException):
     pass
 
 
@@ -70,6 +75,7 @@ class Light(object):
         self._saturation = None
         self._xy = None
         self._colortemp = None
+        self._effect = None
         self._alert = None
         self.transitiontime = None  # default
         self._reset_bri_after_on = None
@@ -248,6 +254,17 @@ class Light(object):
         self.colortemp = colortemp_mireds
 
     @property
+    def effect(self):
+        '''Check the effect setting of the light. [none|colorloop]'''
+        self._effect = self._get('effect')
+        return self._effect
+
+    @effect.setter
+    def effect(self, value):
+        self._effect = value
+        self._set('effect', self._effect)
+
+    @property
     def alert(self):
         '''Get or set the alert state of the light [select|lselect|none]'''
         self._alert = self._get('alert')
@@ -261,19 +278,19 @@ class Light(object):
         self._set('alert', self._alert)
 
 
-class LightGroup(Light):
+class Group(Light):
 
     """ A group of Hue lights, tracked as a group on the bridge
 
     Example:
 
         >>> b = Bridge()
-        >>> g1 = LightGroup(b, 1)
+        >>> g1 = Group(b, 1)
         >>> g1.hue = 50000 # all lights in that group turn blue
         >>> g1.on = False # all will turn off
 
-        >>> g2 = LightGroup(b, 'Kitchen')  # you can also look up groups by name
-        >>>                                # will raise a LookupError if the name doesn't match
+        >>> g2 = Group(b, 'Kitchen')  # you can also look up groups by name
+        >>> # will raise a LookupError if the name doesn't match
 
     """
 
@@ -287,9 +304,14 @@ class LightGroup(Light):
             name = group_id
             groups = bridge.get_group()
             for idnumber, info in groups.items():
-                if info['name'] == name:
-                    self.group_id = int(idnumber)
-                    break
+                if PY3K:
+                    if info['name'] == name:
+                        self.group_id = int(idnumber)
+                        break
+                else:
+                    if info['name'] == unicode(name, encoding='utf-8'):
+                        self.group_id = int(idnumber)
+                        break
             else:
                 raise LookupError("Could not find a group by that name.")
 
@@ -313,12 +335,16 @@ class LightGroup(Light):
     @property
     def name(self):
         '''Get or set the name of the light group [string]'''
-        self._name = self._get('name')
+        if PY3K:
+            self._name = self._get('name')
+        else:
+            self._name = self._get('name').encode('utf-8')
         return self._name
 
     @name.setter
     def name(self, value):
         old_name = self.name
+        self._name = value
         logger.debug("Renaming light group from '{0}' to '{1}'".format(
             old_name, value))
         self._set('name', self._name)
@@ -338,7 +364,7 @@ class LightGroup(Light):
         self._set('lights', value)
 
 
-class AllLights(LightGroup):
+class AllLights(Group):
 
     """ All the Hue lights connected to your bridge
 
@@ -351,7 +377,7 @@ class AllLights(LightGroup):
     def __init__(self, bridge=None):
         if bridge is None:
             bridge = Bridge()
-        LightGroup.__init__(self, bridge, 0)
+        Group.__init__(self, bridge, 0)
 
 
 class Bridge(object):
@@ -367,15 +393,15 @@ class Bridge(object):
 
     Or more succinctly just by accessing this Bridge object as a list or dict:
 
-        >>> b[0]
+        >>> b[1]
         <phue.Light at 0x10473d750>
         >>> b['Kitchen']
-        <phue.Light at 0x1046ce110>
+        <phue.Light at 0x10473d750>
 
 
 
     """
-    def __init__(self, ip=None, username=None):
+    def __init__(self, ip=None, username=None, config_file_path=None):
         """ Initialization function.
 
         Parameters:
@@ -386,9 +412,12 @@ class Bridge(object):
 
         """
 
-        if os.access(os.getenv(USER_HOME), os.W_OK):
-            self.config_file_path = os.path.join(
-                os.getenv(USER_HOME), '.python_hue')
+        if config_file_path is not None:
+            self.config_file_path = config_file_path
+        elif os.getenv(USER_HOME) is not None and os.access(os.getenv(USER_HOME), os.W_OK):
+            self.config_file_path = os.path.join(os.getenv(USER_HOME), '.python_hue')
+        elif 'iPad' in platform.machine() or 'iPhone' in platform.machine() or 'iPad' in platform.machine():
+            self.config_file_path = os.path.join(os.getenv(USER_HOME), 'Documents', '.python_hue')
         else:
             self.config_file_path = os.path.join(os.getcwd(), '.python_hue')
 
@@ -419,13 +448,21 @@ class Bridge(object):
 
     def request(self, mode='GET', address=None, data=None):
         """ Utility function for HTTP GET/PUT requests for the API"""
-        connection = httplib.HTTPConnection(self.ip)
-        if mode == 'GET' or mode == 'DELETE':
-            connection.request(mode, address)
-        if mode == 'PUT' or mode == 'POST':
-            connection.request(mode, address, data)
+        connection = httplib.HTTPConnection(self.ip, timeout=10)
 
-        logger.debug("{0} {1} {2}".format(mode, address, str(data)))
+        try:
+            if mode == 'GET' or mode == 'DELETE':
+                connection.request(mode, address)
+            if mode == 'PUT' or mode == 'POST':
+                connection.request(mode, address, data)
+
+            logger.debug("{0} {1} {2}".format(mode, address, str(data)))
+
+        except socket.timeout:
+            error = "{} Request to {}{} timed out.".format(mode, self.ip, address)
+
+            logger.exception(error)
+            raise PhueRequestTimeout(None, error)
 
         result = connection.getresponse()
         connection.close()
@@ -435,6 +472,37 @@ class Bridge(object):
             result_str = result.read()
             logger.debug(result_str)
             return json.loads(result_str)
+
+    def get_ip_address(self, set_result=False):
+
+        """ Get the bridge ip address from the meethue.com nupnp api """
+
+        connection = httplib.HTTPConnection('www.meethue.com')
+        connection.request('GET', '/api/nupnp')
+
+        logger.info('Connecting to meethue.com/api/nupnp')
+
+        result = connection.getresponse()
+
+        if PY3K:
+            data = json.loads(str(result.read(), encoding='utf-8'))
+        else:
+            result_str = result.read()
+            data = json.loads(result_str)
+
+        """ close connection after read() is done, to prevent issues with read() """
+
+        connection.close()
+
+        ip = str(data[0]['internalipaddress'])
+
+        if ip is not '':
+            if set_result:
+                self.ip = ip
+
+            return ip
+        else:
+            return False
 
     def register_app(self):
         """ Register this computer with the Hue bridge hardware and save the resulting access token """
@@ -527,7 +595,10 @@ class Bridge(object):
             return self.lights_by_id[key]
         except:
             try:
-                return self.lights_by_name[key]
+                if PY3K:
+                    return self.lights_by_name[key]
+                else:
+                    return self.lights_by_name[unicode(key, encoding='utf-8')]
             except:
                 raise KeyError(
                     'Not a valid key (integer index starting with 1, or light name): ' + str(key))
@@ -535,7 +606,7 @@ class Bridge(object):
     @property
     def lights(self):
         """ Access lights as a list """
-        return self.get_light_objects(mode='list')
+        return self.get_light_objects()
 
     def get_api(self):
         """ Returns the full api dictionary """
@@ -620,9 +691,30 @@ class Bridge(object):
     @property
     def groups(self):
         """ Access groups as a list """
-        return [LightGroup(self, groupid) for groupid in self.get_group().keys()]
+        return [Group(self, int(groupid)) for groupid in self.get_group().keys()]
+
+    def get_group_id_by_name(self, name):
+        """ Lookup a group id based on string name. Case-sensitive. """
+        groups = self.get_group()
+        for group_id in groups:
+            if PY3K:
+                if name == groups[group_id]['name']:
+                    return group_id
+            else:
+                if unicode(name, encoding='utf-8') == groups[group_id]['name']:
+                    return group_id
+        return False
 
     def get_group(self, group_id=None, parameter=None):
+        if PY3K:
+            if isinstance(group_id, str):
+                group_id = self.get_group_id_by_name(group_id)
+        else:
+            if isinstance(group_id, str) or isinstance(group_id, unicode):
+                group_id = self.get_group_id_by_name(group_id)
+        if group_id is False:
+            logger.error('Group name does not exit')
+            return
         if group_id is None:
             return self.request('GET', '/api/' + self.username + '/groups/')
         if parameter is None:
@@ -643,7 +735,9 @@ class Bridge(object):
 
         if isinstance(parameter, dict):
             data = parameter
-        elif parameter == 'lights' and isinstance(value, list):
+        elif parameter == 'lights' and (isinstance(value, list) or isinstance(value, int)):
+            if isinstance(value, int):
+                value = [value]
             data = {parameter: [str(x) for x in value]}
         else:
             data = {parameter: value}
@@ -652,10 +746,40 @@ class Bridge(object):
             data['transitiontime'] = int(round(
                 transitiontime))  # must be int for request format
 
-        if parameter == 'name' or parameter == 'lights':
-            return self.request('PUT', '/api/' + self.username + '/groups/' + str(group_id), json.dumps(data))
+        group_id_array = group_id
+        if PY3K:
+            if isinstance(group_id, int) or isinstance(group_id, str):
+                group_id_array = [group_id]
         else:
-            return self.request('PUT', '/api/' + self.username + '/groups/' + str(group_id) + '/action', json.dumps(data))
+            if isinstance(group_id, int) or isinstance(group_id, str) or isinstance(group_id, unicode):
+                group_id_array = [group_id]
+        result = []
+        for group in group_id_array:
+            logger.debug(str(data))
+            if PY3K:
+                if isinstance(group, str):
+                    converted_group = self.get_group_id_by_name(group)
+                else:
+                    converted_group = group
+            else:
+                if isinstance(group, str) or isinstance(group, unicode):
+                        converted_group = self.get_group_id_by_name(group)
+                else:
+                    converted_group = group
+            if converted_group is False:
+                logger.error('Group name does not exit')
+                return
+            if parameter == 'name' or parameter == 'lights':
+                result.append(self.request('PUT', '/api/' + self.username + '/groups/' + str(converted_group), json.dumps(data)))
+            else:
+                result.append(self.request('PUT', '/api/' + self.username + '/groups/' + str(converted_group) + '/action', json.dumps(data)))
+
+        if 'error' in list(result[-1][0].keys()):
+            logger.warn("ERROR: {0} for group {1}".format(
+                result[-1][0]['error']['description'], group))
+
+        logger.debug(result)
+        return result
 
     def create_group(self, name, lights=None):
         """ Create a group of lights
@@ -673,11 +797,6 @@ class Bridge(object):
 
     def delete_group(self, group_id):
         return self.request('DELETE', '/api/' + self.username + '/groups/' + str(group_id))
-
-    @property
-    def groups(self):
-        """ Access groups as a list """
-        return [LightGroup(self, groupid) for groupid in self.get_group().keys()]
 
     # Schedules #####
     def get_schedule(self, schedule_id=None, parameter=None):
@@ -722,14 +841,19 @@ class Bridge(object):
 if __name__ == '__main__':
     import argparse
 
+    logging.basicConfig(level=logging.DEBUG)
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--host', required=True)
+    parser.add_argument('--config-file-path', required=False)
     args = parser.parse_args()
-    logger.setLevel(logging.DEBUG)
 
     while True:
         try:
-            b = Bridge(args.host)
+            b = Bridge(args.host, config_file_path=args.config_file_path)
             break
         except PhueRegistrationException as e:
-            raw_input('Press button on Bridge then hit Enter to try again')
+            if PY3K:
+                input('Press button on Bridge then hit Enter to try again')
+            else:
+                raw_input('Press button on Bridge then hit Enter to try again')
