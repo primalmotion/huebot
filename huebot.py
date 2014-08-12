@@ -9,9 +9,11 @@ import sys
 import json
 import traffic
 import commands
+import logging
 from apscheduler.scheduler import Scheduler
 import config as _c
 
+logging.basicConfig(level=logging.INFO)
 
 def number_of_connected_devices(macs):
     ret = 0;
@@ -57,7 +59,7 @@ def _color_for_traffic():
 if __name__ == "__main__":
 
     scheduler              = Scheduler()
-    bridge                 = phue.Bridge(ip=_c.HUE_BRIDGE_IP)
+    bridge                 = phue.Bridge(ip=_c.HUE_BRIDGE_IP, config_file_path=_c.HUE_BRIDGE_CONFIG)
     last_number_of_devices = 0
 
     def schedule_next_sunset():
