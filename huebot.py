@@ -71,7 +71,16 @@ if __name__ == "__main__":
         else:
             date = datetime.now().replace(hour=_c.SUNSET_HOUR, minute=_c.SUNSET_MINUTES, second=0, tzinfo=None)
 
-        if date < datetime.now():
+        rightnow = datetime.now()
+
+        if date < rightnow:
+
+            logger.info("current sunset already past. scheduling for tomorow.")
+
+            if rightnow.time().hour < _c.SLEEP_TIME_HOUR or (rightnow.time().hour == _c.SLEEP_TIME_HOUR and rightnow.time().minute < _c.SLEEP_TIME_MINUTES):
+                logger.info("still in good hour range. manually registering device presence.")
+                scheduler.add_interval_job(check_devices_presence, seconds=_c.DEVICES_CHECK_INTERVAL)
+
             date = date + timedelta(days=1)
         scheduler.add_date_job(turn_lights_on, date)
 
@@ -99,7 +108,7 @@ if __name__ == "__main__":
         global last_number_of_devices
 
         number_of_devices = number_of_connected_devices(_c.DEVICES_MACS)
-        print "FOUND %d DEVICES " % number_of_devices
+        logger.info("found %d devices " % number_of_devices)
 
         if number_of_devices == 0:
             _set_lights_state(bridge, False)
