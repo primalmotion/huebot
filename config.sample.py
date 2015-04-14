@@ -42,13 +42,11 @@ SUNSET_CITY                = "San Francisco"
 SUNSET_HOUR                = None
 SUNSET_MINUTES             = None
 
-## Traffic light is a feature that allows to dedicate one bulb
-## to show traffic. This really needs hacking, and it basically
-## works for me.
-TRAFFIC_LIGHT_ID               = 1
-TRAFFIC_LIGHT_START_HOUR       = 8
-TRAFFIC_LIGHT_START_MINUTES    = 0
-TRAFFIC_LIGHT_REFRESH_INTERVAL = 5
-TRAFFIC_LIGHT_REFRESH_COUNT    = 2
-TRAFFIC_WEBSERVICE_URL         = "URL"
+
+## NEST Configuration
+NEST_USERNAME                  = "login"
+NEST_PASSWORD                  = "password"
+NEST_SERIAL                    = "serial"
+NEST_REFRESH_INTERVAL          = 120
+
 

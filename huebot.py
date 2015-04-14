@@ -7,11 +7,11 @@ import astral
 import time
 import sys
 import json
-import traffic
 import commands
 import logging
 from apscheduler.scheduler import Scheduler
 import config as _c
+from nest import Nest
 
 logging.basicConfig(level=logging.INFO, filename="/var/log/huebot.log")
 logger = logging.getLogger('huebot')
@@ -34,36 +34,29 @@ def _set_lights_state(bridge, state):
     for bulb_id in _c.HUE_BULBS_IDS:
         bridge.set_light(bulb_id, "on", state)
 
-def _color_for_traffic():
-
-    try:
-        info = traffic.get_traffic_status(_c.TRAFFIC_WEBSERVICE_URL)
-
-        # debug
-        # info = traffic.TRAFFIC_STATUS_VERY_BAD
-
-        print "Checking traffic: %s" % info
-        if info == traffic.TRAFFIC_STATUS_CLEAR: # green blink
-            return {"on" : True, "hue": 25500, "sat": 255, "bri": 255}
-        elif info == traffic.TRAFFIC_STATUS_OK: # green
-            return {"on" : True, "hue": 25500, "sat": 255, "bri": 255}
-        elif info == traffic.TRAFFIC_STATUS_MEDIUM: # orange
-            return {"on" : True, "hue": 12750, "sat": 255, "bri": 255}
-        elif info == traffic.TRAFFIC_STATUS_BAD: # red
-            return {"on" : True, "hue": 65280, "sat": 255, "bri": 255}
-        elif info == traffic.TRAFFIC_STATUS_VERY_BAD: # red blink
-            return {"on" : True, "hue": 65280, "sat": 255, "bri": 255, "alert": "lselect"}
-    except:
-        return {"on" : True, "hue": 56100, "sat": 254, "bri": 254, "alert": "lselect"}
-
+def _set_nest_state(nest, state):
+    if state:
+        if nest.mode == "init" or not nest.mode == "heat":
+            nest.set_mode("heat")
+        else:
+            logging.info("Already in heat mode. ignoring request")
+    else:
+        if nest.mode == "init" or not nest.mode == "off":
+            nest.set_mode("off")
+        else:
+            logging.info("Already in off mode. ignoring request")
 
 if __name__ == "__main__":
 
     logger.info("HUEBOT says hello!")
 
     scheduler              = Scheduler()
+    nest                   = Nest(_c.NEST_USERNAME, _c.NEST_PASSWORD, _c.NEST_SERIAL)
     bridge                 = phue.Bridge(ip=_c.HUE_BRIDGE_IP, config_file_path=_c.HUE_BRIDGE_CONFIG)
     last_number_of_devices = 0
+
+    nest.login()
+    nest.get_status()
 
     def schedule_next_sunset():
         if _c.SUNSET_AUTO:
@@ -118,27 +111,19 @@ if __name__ == "__main__":
 
         last_number_of_devices = number_of_devices
 
-
-    def traffic_report():
-        if  datetime.today().weekday() in [5, 6]:
-            return
-
-        base_state = bridge.get_light(_c.TRAFFIC_LIGHT_ID)["state"]
-        refresh = 0
-
-        while refresh < _c.TRAFFIC_LIGHT_REFRESH_COUNT:
-            bridge.set_light(_c.TRAFFIC_LIGHT_ID, _color_for_traffic())
-            time.sleep(_c.TRAFFIC_LIGHT_REFRESH_INTERVAL)
-            refresh = refresh + 1
-
-        bridge.set_light(_c.TRAFFIC_LIGHT_ID, {"on": True, "hue": base_state["hue"], "sat": base_state["sat"], "bri": base_state["bri"], "transitiontime": 0})
-        time.sleep(1)
-        bridge.set_light(_c.TRAFFIC_LIGHT_ID, {"on": False, "transitiontime": 0})
+    def manage_nest():
+        logger.info("checking for devices for Nest...")
+        if number_of_connected_devices(_c.DEVICES_MACS) > 0:
+            logger.info("some devices found. setting Nest to 'heat'")
+            _set_nest_state(nest, True)
+        else:
+            logger.info("no device found. setting Nest to 'off'")
+            _set_nest_state(nest, False)
 
     schedule_next_sunset()
-    scheduler.add_cron_job(turn_lights_off, hour=_c.SLEEP_TIME_HOUR, minute=_c.SLEEP_TIME_MINUTES)
-    scheduler.add_cron_job(traffic_report, hour=_c.TRAFFIC_LIGHT_START_HOUR, minute=_c.TRAFFIC_LIGHT_START_MINUTES)
     scheduler.start()
+    scheduler.add_cron_job(turn_lights_off, hour=_c.SLEEP_TIME_HOUR, minute=_c.SLEEP_TIME_MINUTES)
+    scheduler.add_interval_job(manage_nest, seconds=_c.NEST_REFRESH_INTERVAL)
 
     while True:
         time.sleep(10000000)
